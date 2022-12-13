@@ -102,7 +102,7 @@ ENDELSE
 
 END
 
-PRO load_one_bt,dir,index,lat,lon,pres,temp
+PRO load_one_bt,dir,index,time,lat,lon,pres,temp
 
 files=FILE_SEARCH(dir,'part_*')
 
@@ -124,12 +124,173 @@ FOR i=0,nFiles-1 DO BEGIN
   read_tz_part,file,full
   k=WHERE(index EQ full.idx_back)
   ;print,k[0]
+  IF i EQ 0 THEN time=86400.+full.lr_start[k]
   IF k[0] NE -1 THEN BEGIN
     lat[i]=full.lat[k]
     lon[i]=full.lon[k]
     pres[i]=full.pres[k]
     temp[i]=full.temp[k]
+    ;stop
   ENDIF
+  
+ENDFOR
+
+END
+
+PRO load_one_block,dir,index0,index1,time,lat,lon,pres,temp,range=range
+
+  files=FILE_SEARCH(dir,'part_*')
+
+  nFiles=N_ELEMENTS(files)
+
+  IF KEYWORD_SET(range) THEN BEGIN
+    nBT=N_ELEMENTS(range)
+  ENDIF ELSE BEGIN
+    nBT=index1-index0+1
+    range=L64INDGEN(nBT)+index0
+  ENDELSE
+  
+  time=FLTARR(nBT)
+  lat=FLTARR(nFiles,nBT)
+  lon=FLTARR(nFiles,nBT)
+  pres=FLTARR(nFiles,nBT)
+  temp=FLTARR(nFiles,nBT)
+
+  lat[*]=!VALUES.F_NAN
+  lon[*]=!VALUES.F_NAN
+  pres[*]=!VALUES.F_NAN
+  temp[*]=!VALUES.F_NAN
+
+  FOR i=0,nFiles-1 DO BEGIN
+
+    file=files[i]
+    read_tz_part,file,full
+    
+    IF i EQ 0 THEN BEGIN
+      time=86400.+full.lr_start[range]
+    ENDIF
+    FOR j=0,nBT-1 DO BEGIN
+      
+      k=WHERE(range[j] EQ full.idx_back)
+      
+      IF k[0] NE -1 THEN BEGIN
+        
+        lat[i,j]=full.lat[k]
+        lon[i,j]=full.lon[k]
+        pres[i,j]=full.pres[k]
+        temp[i,j]=full.temp[k]
+        
+      ENDIF
+    ENDFOR
+  ENDFOR
+
+END
+
+PRO correct_block,quant
+
+nsize=N_ELEMENTS(quant[0,*])
+
+FOR i=0,nsize-1 DO BEGIN
+  
+  x=FINITE(quant[*,i])
+  j=WHERE(x EQ 1)
+  IF N_ELEMENTS(j) GE 2 THEN BEGIN
+    IF j[1]-j[0] NE 1 THEN BEGIN
+      line=quant[j,i]
+      quant[*,i]=!Values.F_NAN
+      quant[0:N_ELEMENTS(j)-1,i]=line
+    ENDIF
+  ENDIF
+  
+ENDFOR
+
+END
+
+PRO make_avg_paths,dir,avp,avlat,avlon,avt,starts,nParcels
+
+files=FILE_SEARCH(dir,'part_*')
+nFiles=N_ELEMENTS(files)
+
+
+read_tz_part,files[0],full000
+nRels=full000.nact/nParcels
+
+dex=DINDGEN(nRels+1)*nParcels+1
+starts=86400.+REBIN(full000.lr_start,nRels)
+
+avp=DBLARR(nRels,nFiles)
+avt=DBLARR(nRels,nFiles)
+avlat=DBLARR(nRels,nFiles)
+avlon=DBLARR(nRels,nFiles)
+avp[*,*]=!VALUES.F_NAN
+avt[*,*]=!VALUES.F_NAN
+avlat[*,*]=!VALUES.F_NAN
+avlon[*,*]=!VALUES.F_NAN
+
+FOR i=0,nFiles-1 DO BEGIN
+
+  file=files[i]
+  read_tz_part,file,full
+
+  FOR j=0,nRels-1 DO BEGIN
+
+    k=WHERE(full.idx_back LT dex[j+1])
+    IF k[0] NE -1 THEN BEGIN
+      avp[j,i]=mean(full.pres[k])/100d0
+      avt[j,i]=mean(full.temp[k])
+      avlat[j,i]=mean(full.lat[k])
+      avlon[j,i]=mean(full.lon[k])
+    ENDIF
+
+  ENDFOR
+
+
+
+ENDFOR
+
+
+
+END
+
+PRO stddev_calc,dir,stdz,stdlat,stdlon,nParcels
+
+R=8.3145d0
+g=9.81d0
+
+files=FILE_SEARCH(dir,'part_*')
+nFiles=N_ELEMENTS(files)
+
+
+read_tz_part,files[0],full000
+nRels=full000.nact/nParcels
+
+dex=DINDGEN(nRels+1)*nParcels+1
+
+stdz=DBLARR(nRels,nFiles)
+stdlat=DBLARR(nRels,nFiles)
+stdlon=DBLARR(nRels,nFiles)
+stdz[*,*]=!VALUES.F_NAN
+stdlat[*,*]=!VALUES.F_NAN
+stdlon[*,*]=!VALUES.F_NAN
+
+FOR i=0,nFiles-1 DO BEGIN
+  
+  file=files[i]
+  read_tz_part,file,full
+  nlp=-R*g/full.temp*ALOG(full.pres)
+  
+  FOR j=0,nRels-1 DO BEGIN
+    
+    k=WHERE(full.idx_back LT dex[j+1])
+    IF k[0] NE -1 THEN BEGIN
+      stdz[j,i]=stddev(full.pres[k])
+      stdlat[j,i]=stddev(full.lat[k])
+      stdlon[j,i]=stddev(full.lon[k])
+    ENDIF
+
+  ENDFOR
+  
+  
   
 ENDFOR
 
