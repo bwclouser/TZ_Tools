@@ -104,7 +104,7 @@ FOR i=n_files-735,0,-1 DO BEGIN
   
   ct=contour(hh,gd.x.values-360.,gd.y.values,rgb_table=38,c_value=[10,11,12,13,14,15,16,17,18,19,20,21,22],/fill,/overplot)
   cb=colorbar(target=ct,orientation=0,range=[10,22],position=[0.08,0.08,0.50,0.10],title='Altitude (km)',font_size=14,textpos=0,rgb_table=38)
-  stop
+  ;stop
 
  
 

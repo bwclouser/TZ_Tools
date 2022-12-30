@@ -46,7 +46,9 @@ full={lhead:first.lhead,outfmt:first.outfmt,mode:first.mode,stamp_date:second.st
 
 END
 
-PRO write_part_000,dat,tb,te,stampTime,nParcels
+PRO write_part_000,dat,tb,te,stampTime,nParcels,doublesub=doublesub
+
+IF KEWYORD_SET(doublesub) THEN sub=172800L ELSE sub=86400L
 
 timeInd=WHERE(dat.t_utc GE tb AND dat.t_utc LE te)
 nTimes=N_ELEMENTS(timeInd)
@@ -63,7 +65,7 @@ IF timeInd[0] NE -1 THEN BEGIN
   rec4=LONARR(nAct)
   rec4[*]=127L
   
-  rec5=LONG(dat[timeInd].t_utc-86400L)
+  rec5=LONG(dat[timeInd].t_utc-sub)
   rec5=REFORM(rec5##ones,nAct)
   
   rec6=FLOAT(dat[timeInd].g_long_mms)
