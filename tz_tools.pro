@@ -46,9 +46,16 @@ full={lhead:first.lhead,outfmt:first.outfmt,mode:first.mode,stamp_date:second.st
 
 END
 
-PRO write_part_000,dat,tb,te,stampTime,nParcels,doublesub=doublesub
+PRO write_part_000,dat,tb,te,stampTime,nParcels,doublesub=doublesub,padchi=padchi
 
-IF KEWYORD_SET(doublesub) THEN sub=172800L ELSE sub=86400L
+IF KEYWORD_SET(doublesub) THEN sub=172800L ELSE sub=86400L
+
+IF KEYWORD_SET(padchi) THEN BEGIN
+  p500=WHERE(dat.p_mms LE 500.)
+  tb=dat[p500[0]].t_utc
+  te=dat[p500[N_ELEMENTS(p500)-1]].t_utc
+  ;stop
+ENDIF
 
 timeInd=WHERE(dat.t_utc GE tb AND dat.t_utc LE te)
 nTimes=N_ELEMENTS(timeInd)

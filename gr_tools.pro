@@ -115,3 +115,120 @@ FOR i=n_files-735,0,-1 DO BEGIN
 ENDFOR
 
 END
+
+PRO cloudTopExtract,GRpath,ncores=ncores
+
+grfiles=FILE_SEARCH(GRpath,'*.nc')
+;grfiles=grfiles[0:49]
+nFiles=N_ELEMENTS(grfiles)
+
+padd="':/home/benjamin/IDLWorkspace/Default/Ben IDL'"
+
+IF ncores GE !CPU.HW_NCPU THEN BEGIN
+  PRINT,'You want to use more threads than are available!'
+ENDIF ELSE BEGIN
+  
+  aborig=L64INDGEN(2832LL*1248LL*13LL) MOD 13LL
+  aborig=TRANSPOSE(REFORM(aborig,13,2832,1248),[1,2,0])
+  
+  shmname='ab'
+  iSize=SIZE(aborig)
+  SHMMAP,shmname,SIZE=iSize,TEMPLATE=aborig
+  x=SHMVAR(shmname)
+  x[0,0,0]=aborig
+  ;print,aborig[0:3,0:3,0:3]
+  
+  oArr=OBJARR(ncores)
+  dones=BYTARR(ncores)
+  dones[*]=1B
+  
+  FOR i=0,ncores-1 DO BEGIN
+    print,'*'
+    strnum=STRING(i,FORMAT='(I02)')
+    fname='debug'+strnum+'.txt'
+    print,fname
+    oArr[i]=OBJ_NEW('IDL_IDLBridge',OUTPUT=fname)
+    oArr[i].setvar,'coreNum',i
+    oArr[i].setvar,'nFiles',nFiles
+    oArr[i].setvar,'grfiles',grfiles
+    oArr[i].setvar,'ncores',ncores
+    oArr[i].setvar,'shmname',shmname
+    oArr[i].setvar,'iSize',iSize
+    oArr[i].execute,'PRINT,ncores'
+    oArr[i].execute,'CD,"/media/benjamin/Data/GridRad/2022"'
+    oArr[i].execute,'!PATH=!PATH+'+padd
+    oArr[i].execute,'SHMMAP,shmname,SIZE=iSize'
+    oArr[i].execute,'x=SHMVAR(shmname)'
+    oArr[i].execute,'.compile gr_tools'
+    oArr[i].execute,'.compile /home/benjamin/IDLWorkspace/Default/bowman_lib/misc/index_of_nearest_kpb.pro'
+    oArr[i].execute,'.compile gridrad_v4_2_read_file'
+    oArr[i].execute,'.compile gridrad_remove_clutter_v4_2'
+    oArr[i].execute,'.compile gridrad_filter_v4_2'
+    oArr[i].execute,'PRINT,x[0:3,0:3,0:3]'
+    oArr[i].execute,'PRINT,SIZE(x)'
+    
+    oArr[i].execute,'CTEcore,grfiles,ncores,coreNum,x',/NOWAIT
+    
+  ENDFOR
+  
+  WHILE TOTAL(dones) NE 0 DO BEGIN
+    FOR i=0,ncores-1 DO BEGIN
+      dones[i]=BYTE(oArr[i].status())
+    END
+  ENDWHILE
+  
+  FOREACH arr,oArr DO OBJ_DESTROY,arr
+  
+  ab=0
+  SHMUNMAP,'ab'
+ENDELSE
+
+END
+
+PRO CTEcore,grfiles,ncores,coreNum,ab
+
+numInBlock=CEIL(N_ELEMENTS(grfiles)/ncores)
+index=INDGEN(numInBlock)+coreNum*numInBlock
+gdFiles=WHERE(index LE N_ELEMENTS(grfiles)-1)
+IF N_ELEMENTS(gdFiles) NE numInBlock THEN index=index[gdFiles]
+
+fn1='CTheights.dat.part'+STRING(coreNum,FORMAT='(I02)')
+fn2='CTindex.dat.part'+STRING(coreNum,FORMAT='(I02)')
+OPENW,wlun1,fn1,/get_lun
+OPENW,wlun2,fn2,/get_lun
+
+grsub=grfiles[index]
+
+;ab=DINDGEN(2832D0*1248D0*13D0) MOD 13
+;ab=TRANSPOSE(REFORM(ab,13,2832,1248),[1,2,0])
+
+
+FOREACH file,grsub DO BEGIN
+  
+  gd=gridrad_v4_2_read_file(file)
+  gd=gridrad_filter_v4_2(TEMPORARY(gd))
+  gd=gridrad_remove_clutter_v4_2(TEMPORARY(gd))
+  
+  x1=where(gd.z.values eq 10)
+  x2=where(gd.z.values eq 22)
+  zh=gd.z_h.values
+  DELVAR,gd
+  zh[zh<15]=!Values.F_NAN
+  hh=MAX(FINITE(zh[*,*,x1:x2])*ab,DIM=3)+10
+  
+  times=file.substring(-19,-4)
+  
+  POINT_LUN,-1*wlun1,poss
+  
+  poss=ULONG64(poss)
+  WRITEU,wlun2,times
+  WRITEU,wlun2,poss
+  
+  WRITEU,wlun1,FIX(hh)
+  
+ENDFOREACH
+
+FREE_LUN,wlun1
+FREE_LUN,wlun2
+
+END
