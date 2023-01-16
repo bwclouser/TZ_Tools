@@ -111,10 +111,14 @@ ENDELSE
 
 END
 
-PRO load_one_bt,dir,index,time,lat,lon,pres,temp
+PRO load_one_bt,dir,index,time,lat,lon,pres,temp,indexed=indexed
+
+t0=SYSTIME(1)
 
 files=FILE_SEARCH(dir,'part_*')
-
+fs=FILE_INFO(files)
+ind=WHERE(INDGEN(N_ELEMENTS(files)) LE 24 OR fs.size NE 132)
+files=files[ind]
 nFiles=N_ELEMENTS(files)
 
 lat=FLTARR(nFiles)
@@ -127,22 +131,77 @@ lon[*]=!VALUES.F_NAN
 pres[*]=!VALUES.F_NAN
 temp[*]=!VALUES.F_NAN
 
-FOR i=0,nFiles-1 DO BEGIN
+IF NOT KEYWORD_SET(indexed) THEN BEGIN
   
-  file=files[i]
-  read_tz_part,file,full
-  k=WHERE(index EQ full.idx_back)
-  ;print,k[0]
-  IF i EQ 0 THEN time=86400.+full.lr_start[k]
-  IF k[0] NE -1 THEN BEGIN
-    lat[i]=full.lat[k]
-    lon[i]=full.lon[k]
-    pres[i]=full.pres[k]
-    temp[i]=full.temp[k]
-    ;stop
-  ENDIF
+  FOR i=0,nFiles-1 DO BEGIN
+    
+    file=files[i]
+    read_tz_part,file,full
+    k=WHERE(index EQ full.idx_back)
+    ;print,k[0]
+    IF i EQ 0 THEN time=86400.+full.lr_start[k]
+    IF k[0] NE -1 THEN BEGIN
+      ;dex=full.idx_back[k]
+      lat[i]=full.lat[k]
+      lon[i]=full.lon[k]
+      pres[i]=full.pres[k]
+      temp[i]=full.temp[k]
+      ;stop
+    ENDIF
+    
+  ENDFOR
+
+ENDIF ELSE BEGIN
   
-ENDFOR
+  OPENR,lun,indexed,/get_lun
+  nact=0L
+  val=0.
+  ;POINT_LUN,lun,52
+  ;READU,lun,nact
+  oneline=LONARR(nFiles)
+  POINT_LUN,lun,8L+(index-1L)*nFiles*4L
+  READU,lun,oneline
+  FREE_LUN,lun
+  
+  FOR i=0,nFiles-1 DO BEGIN
+    
+    file=files[i]
+    
+    OPENR,lun,file,/get_lun,/swap_endian
+    IF oneline[i] NE -1 THEN BEGIN
+      
+      POINT_LUN,lun,52
+      READU,lun,nact
+      dex=oneline[i]
+      ;POINT_LUN,lun,80L+1L*(8L+4L*nact)
+      ;READU,lun,val
+      ;time[i]=val
+      
+      POINT_LUN,lun,80L+2L*(8L+4L*nact)+dex
+      READU,lun,val
+      lon[i]=val
+      
+      POINT_LUN,lun,80L+3L*(8L+4L*nact)+dex
+      READU,lun,val
+      lat[i]=val
+      
+      POINT_LUN,lun,80L+4L*(8L+4L*nact)+dex
+      READU,lun,val
+      pres[i]=val
+      
+      POINT_LUN,lun,80L+5L*(8L+4L*nact)+dex
+      READU,lun,val
+      temp[i]=val
+      ;stop
+      ;print,i
+    ENDIF
+    
+    FREE_LUN,lun
+    
+  ENDFOR
+  
+ENDELSE
+PRINT,SYSTIME(1)-t0
 
 END
 
@@ -261,46 +320,120 @@ ENDFOR
 
 END
 
-PRO stddev_calc,dir,stdz,stdlat,stdlon,nParcels
-
-R=8.3145d0
-g=9.81d0
-
-files=FILE_SEARCH(dir,'part_*')
-nFiles=N_ELEMENTS(files)
-
-
-read_tz_part,files[0],full000
-nRels=full000.nact/nParcels
-
-dex=DINDGEN(nRels+1)*nParcels+1
-
-stdz=DBLARR(nRels,nFiles)
-stdlat=DBLARR(nRels,nFiles)
-stdlon=DBLARR(nRels,nFiles)
-stdz[*,*]=!VALUES.F_NAN
-stdlat[*,*]=!VALUES.F_NAN
-stdlon[*,*]=!VALUES.F_NAN
-
-FOR i=0,nFiles-1 DO BEGIN
+PRO stddev_calc,dir,stdz,stdlat,stdlon,nParcels,index=index
   
-  file=files[i]
-  read_tz_part,file,full
-  nlp=-R*g/full.temp*ALOG(full.pres)
+  R=8.3145d0
+  g=9.81d0
   
-  FOR j=0,nRels-1 DO BEGIN
+  files=FILE_SEARCH(dir,'part_*')
+  nFiles=N_ELEMENTS(files)
+  
+IF NOT KEYWORD_SET(index) THEN BEGIN
+  
+  read_tz_part,files[0],full000
+  nRels=full000.nact/nParcels
+  
+  dex=DINDGEN(nRels+1)*nParcels+1
+  
+  stdz=DBLARR(nRels,nFiles)
+  stdlat=DBLARR(nRels,nFiles)
+  stdlon=DBLARR(nRels,nFiles)
+  stdz[*,*]=!VALUES.F_NAN
+  stdlat[*,*]=!VALUES.F_NAN
+  stdlon[*,*]=!VALUES.F_NAN
+  
+  FOR i=0,nFiles-1 DO BEGIN
     
-    k=WHERE(full.idx_back LT dex[j+1])
-    IF k[0] NE -1 THEN BEGIN
-      stdz[j,i]=stddev(full.pres[k])
-      stdlat[j,i]=stddev(full.lat[k])
-      stdlon[j,i]=stddev(full.lon[k])
-    ENDIF
-
+    file=files[i]
+    read_tz_part,file,full
+    nlp=-R*g/full.temp*ALOG(full.pres)
+    
+    FOR j=0,nRels-1 DO BEGIN
+      
+      k=WHERE(full.idx_back LT dex[j+1])
+      IF k[0] NE -1 THEN BEGIN
+        stdz[j,i]=stddev(full.pres[k])
+        stdlat[j,i]=stddev(full.lat[k])
+        stdlon[j,i]=stddev(full.lon[k])
+      ENDIF
+  
+    ENDFOR
+    
   ENDFOR
   
+ENDIF ELSE BEGIN
   
+ENDELSE
+
+END
+
+PRO indexTRAJ,dir
+
+t0=SYSTIME(1)
+
+;swap_endian to read TRACZILLA output
+;Nact is at byte 52
+;idx array is at 20+20+32+6*(8+4*Nact)+8
+
+files=FILE_SEARCH(dir,'part_*')
+
+oname=dir+'part.idx'
+
+nparc=LONG(0)
+nact=LONG(0)
+
+fs=FILE_INFO(files)
+ind=WHERE(INDGEN(N_ELEMENTS(files)) LE 24 OR fs.size NE 132)
+files=files[ind]
+
+n_files=LONG(N_ELEMENTS(files))
+
+FOR i=0,n_files-1 DO BEGIN
+  
+  file=files[i]
+  
+  IF i EQ 0 THEN BEGIN
+    
+    OPENR,lun,file,/get_lun,/swap_endian
+    POINT_LUN,lun,48
+    READU,lun,nparc
+    
+    towrite=MAKE_ARRAY(n_files,nparc,VALUE=-1L,/LONG)
+    ;towrite=MAKE_ARRAY(nparc,n_files,VALUE=-1L,/LONG)
+    ;oneline=LONARR(nparc)
+    
+    FREE_LUN,lun
+    
+  ENDIF
+
+  OPENR,lun,file,/get_lun,/swap_endian
+  POINT_LUN,lun,52
+  READU,lun,nact  
+
+  IF nact NE 0 THEN BEGIN
+    
+    oneline=LONARR(nact)
+    
+    POINT_LUN,lun,80LL+6LL*(8LL+4LL*nact)
+    READU,lun,oneline
+    stop
+    towrite[i,oneline-1]=4L*LINDGEN(nact)
+    
+  ENDIF ELSE BEGIN
+
+  ENDELSE
+  
+  FREE_LUN,lun
+  
+  
+  ;PRINT,files[i]
   
 ENDFOR
+
+OPENW,wlun,oname,/get_lun
+WRITEU,wlun,nparc,n_files,towrite
+FREE_LUN,wlun
+
+PRINT,SYSTIME(1)-t0
 
 END
