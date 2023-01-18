@@ -159,7 +159,7 @@ ENDIF ELSE BEGIN
   ;POINT_LUN,lun,52
   ;READU,lun,nact
   oneline=LONARR(nFiles)
-  POINT_LUN,lun,8L+(index-1L)*nFiles*4L
+  POINT_LUN,lun,8L+(LONG(index)-1L)*LONG(nFiles)*4L
   READU,lun,oneline
   FREE_LUN,lun
   
@@ -176,7 +176,9 @@ ENDIF ELSE BEGIN
       ;POINT_LUN,lun,80L+1L*(8L+4L*nact)
       ;READU,lun,val
       ;time[i]=val
-      
+      ;stop
+      ;if file eq './part_723' then stop
+      PRINT,file,80LL+2LL*(8LL+4LL*nact)+dex,80L+2L*(8L+4L*nact)+dex
       POINT_LUN,lun,80L+2L*(8L+4L*nact)+dex
       READU,lun,val
       lon[i]=val
@@ -192,7 +194,6 @@ ENDIF ELSE BEGIN
       POINT_LUN,lun,80L+5L*(8L+4L*nact)+dex
       READU,lun,val
       temp[i]=val
-      ;stop
       ;print,i
     ENDIF
     
@@ -205,29 +206,35 @@ PRINT,SYSTIME(1)-t0
 
 END
 
-PRO load_one_block,dir,index0,index1,time,lat,lon,pres,temp,range=range
+PRO load_one_block,dir,index0,index1,time,lat,lon,pres,temp,range=range,indexed=indexed
 
-  files=FILE_SEARCH(dir,'part_*')
+t0=SYSTIME(1)
 
-  nFiles=N_ELEMENTS(files)
+files=FILE_SEARCH(dir,'part_*')
+fs=FILE_INFO(files)
+ind=WHERE(INDGEN(N_ELEMENTS(files)) LE 24 OR fs.size NE 132)
+files=files[ind]
+nFiles=N_ELEMENTS(files)
 
-  IF KEYWORD_SET(range) THEN BEGIN
-    nBT=N_ELEMENTS(range)
-  ENDIF ELSE BEGIN
-    nBT=index1-index0+1
-    range=L64INDGEN(nBT)+index0
-  ENDELSE
-  
-  time=FLTARR(nBT)
-  lat=FLTARR(nFiles,nBT)
-  lon=FLTARR(nFiles,nBT)
-  pres=FLTARR(nFiles,nBT)
-  temp=FLTARR(nFiles,nBT)
+IF KEYWORD_SET(range) THEN BEGIN
+  nBT=N_ELEMENTS(range)
+ENDIF ELSE BEGIN
+  nBT=index1-index0+1
+  range=L64INDGEN(nBT)+index0
+ENDELSE
 
-  lat[*]=!VALUES.F_NAN
-  lon[*]=!VALUES.F_NAN
-  pres[*]=!VALUES.F_NAN
-  temp[*]=!VALUES.F_NAN
+time=FLTARR(nBT)
+lat=FLTARR(nFiles,nBT)
+lon=FLTARR(nFiles,nBT)
+pres=FLTARR(nFiles,nBT)
+temp=FLTARR(nFiles,nBT)
+
+lat[*]=!VALUES.F_NAN
+lon[*]=!VALUES.F_NAN
+pres[*]=!VALUES.F_NAN
+temp[*]=!VALUES.F_NAN
+
+IF NOT KEYWORD_SET(indexed) THEN BEGIN
 
   FOR i=0,nFiles-1 DO BEGIN
 
@@ -251,6 +258,64 @@ PRO load_one_block,dir,index0,index1,time,lat,lon,pres,temp,range=range
       ENDIF
     ENDFOR
   ENDFOR
+  
+  ENDIF ELSE BEGIN
+    
+    OPENR,lun,indexed,/get_lun
+    nact=0L
+    ;val=0.
+    ;POINT_LUN,lun,52
+    ;READU,lun,nact
+    oneblock=LONARR(nFiles,index1-index0+1L)
+    POINT_LUN,lun,8L+(LONG(index0)-1L)*LONG(nFiles)*4L
+    READU,lun,oneblock
+    FREE_LUN,lun
+
+    FOR i=0,nFiles-1 DO BEGIN
+
+      file=files[i]
+
+      OPENR,lun,file,/get_lun,/swap_endian
+      goods=WHERE(oneblock[i,*] NE -1L)
+      
+      
+      IF goods[0] NE -1 THEN BEGIN
+
+        POINT_LUN,lun,52
+        READU,lun,nact
+        dex=oneblock[i,goods[0]]
+        ;POINT_LUN,lun,80L+1L*(8L+4L*nact)
+        ;READU,lun,val
+        ;time[i]=val
+        vals=FLTARR(N_ELEMENTS(goods))
+
+        POINT_LUN,lun,80L+2L*(8L+4L*nact)+dex
+        READU,lun,vals
+        lon[i,goods]=vals
+
+        POINT_LUN,lun,80L+3L*(8L+4L*nact)+dex
+        READU,lun,vals
+        lat[i,goods]=vals
+
+        POINT_LUN,lun,80L+4L*(8L+4L*nact)+dex
+        READU,lun,vals
+        pres[i,goods]=vals
+
+        POINT_LUN,lun,80L+5L*(8L+4L*nact)+dex
+        READU,lun,vals
+        temp[i,goods]=vals
+        ;stop
+        ;print,i
+      ENDIF
+
+      FREE_LUN,lun
+
+    ENDFOR
+
+   
+  ENDELSE
+  
+  PRINT,SYSTIME(1)-t0
 
 END
 
@@ -387,12 +452,12 @@ ind=WHERE(INDGEN(N_ELEMENTS(files)) LE 24 OR fs.size NE 132)
 files=files[ind]
 
 n_files=LONG(N_ELEMENTS(files))
-
-FOR i=0,n_files-1 DO BEGIN
+;stop
+FOR i=0L,n_files-1L DO BEGIN
   
   file=files[i]
   
-  IF i EQ 0 THEN BEGIN
+  IF i EQ 0L THEN BEGIN
     
     OPENR,lun,file,/get_lun,/swap_endian
     POINT_LUN,lun,48
@@ -414,10 +479,10 @@ FOR i=0,n_files-1 DO BEGIN
     
     oneline=LONARR(nact)
     
-    POINT_LUN,lun,80LL+6LL*(8LL+4LL*nact)
+    POINT_LUN,lun,80LL+6LL*(8LL+4LL*LONG64(nact))
     READU,lun,oneline
-    stop
-    towrite[i,oneline-1]=4L*LINDGEN(nact)
+    ;stop
+    towrite[i,oneline-1LL]=4L*LINDGEN(nact)
     
   ENDIF ELSE BEGIN
 
@@ -429,7 +494,7 @@ FOR i=0,n_files-1 DO BEGIN
   ;PRINT,files[i]
   
 ENDFOR
-
+;stop
 OPENW,wlun,oname,/get_lun
 WRITEU,wlun,nparc,n_files,towrite
 FREE_LUN,wlun
