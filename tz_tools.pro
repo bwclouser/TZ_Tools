@@ -121,6 +121,7 @@ ind=WHERE(INDGEN(N_ELEMENTS(files)) LE 24 OR fs.size NE 132)
 files=files[ind]
 nFiles=N_ELEMENTS(files)
 
+time=0L
 lat=FLTARR(nFiles)
 lon=FLTARR(nFiles)
 pres=FLTARR(nFiles)
@@ -139,7 +140,7 @@ IF NOT KEYWORD_SET(indexed) THEN BEGIN
     read_tz_part,file,full
     k=WHERE(index EQ full.idx_back)
     ;print,k[0]
-    IF i EQ 0 THEN time=86400.+full.lr_start[k]
+    IF i EQ 0 THEN time=86400L+full.lr_start[k]
     IF k[0] NE -1 THEN BEGIN
       ;dex=full.idx_back[k]
       lat[i]=full.lat[k]
@@ -156,8 +157,7 @@ ENDIF ELSE BEGIN
   OPENR,lun,indexed,/get_lun
   nact=0L
   val=0.
-  ;POINT_LUN,lun,52
-  ;READU,lun,nact
+
   oneline=LONARR(nFiles)
   POINT_LUN,lun,8L+(LONG(index)-1L)*LONG(nFiles)*4L
   READU,lun,oneline
@@ -168,17 +168,21 @@ ENDIF ELSE BEGIN
     file=files[i]
     
     OPENR,lun,file,/get_lun,/swap_endian
+    
     IF oneline[i] NE -1 THEN BEGIN
       
+      dex=oneline[i]
+
       POINT_LUN,lun,52
       READU,lun,nact
-      dex=oneline[i]
-      ;POINT_LUN,lun,80L+1L*(8L+4L*nact)
-      ;READU,lun,val
-      ;time[i]=val
-      ;stop
-      ;if file eq './part_723' then stop
-      PRINT,file,80LL+2LL*(8LL+4LL*nact)+dex,80L+2L*(8L+4L*nact)+dex
+
+      IF i EQ 0L THEN BEGIN
+        POINT_LUN,lun,80LL+1LL*(8LL+4LL*nact)+dex
+        READU,lun,time
+        time+=86400L
+      ENDIF
+
+      ;PRINT,file,80LL+2LL*(8LL+4LL*nact)+dex,80L+2L*(8L+4L*nact)+dex
       POINT_LUN,lun,80L+2L*(8L+4L*nact)+dex
       READU,lun,val
       lon[i]=val
@@ -223,7 +227,7 @@ ENDIF ELSE BEGIN
   range=L64INDGEN(nBT)+index0
 ENDELSE
 
-time=FLTARR(nBT)
+time=LONARR(nBT)
 lat=FLTARR(nFiles,nBT)
 lon=FLTARR(nFiles,nBT)
 pres=FLTARR(nFiles,nBT)
@@ -263,9 +267,7 @@ IF NOT KEYWORD_SET(indexed) THEN BEGIN
     
     OPENR,lun,indexed,/get_lun
     nact=0L
-    ;val=0.
-    ;POINT_LUN,lun,52
-    ;READU,lun,nact
+
     oneblock=LONARR(nFiles,index1-index0+1L)
     POINT_LUN,lun,8L+(LONG(index0)-1L)*LONG(nFiles)*4L
     READU,lun,oneblock
@@ -278,15 +280,20 @@ IF NOT KEYWORD_SET(indexed) THEN BEGIN
       OPENR,lun,file,/get_lun,/swap_endian
       goods=WHERE(oneblock[i,*] NE -1L)
       
-      
       IF goods[0] NE -1 THEN BEGIN
 
+        dex=oneblock[i,goods[0]]
+        
         POINT_LUN,lun,52
         READU,lun,nact
-        dex=oneblock[i,goods[0]]
-        ;POINT_LUN,lun,80L+1L*(8L+4L*nact)
-        ;READU,lun,val
-        ;time[i]=val
+
+        IF i EQ 0L THEN BEGIN
+          POINT_LUN,lun,80L+1L*(8L+4L*nact)+dex
+          READU,lun,time
+          time+=86400L
+        ENDIF
+
+
         vals=FLTARR(N_ELEMENTS(goods))
 
         POINT_LUN,lun,80L+2L*(8L+4L*nact)+dex
@@ -304,8 +311,7 @@ IF NOT KEYWORD_SET(indexed) THEN BEGIN
         POINT_LUN,lun,80L+5L*(8L+4L*nact)+dex
         READU,lun,vals
         temp[i,goods]=vals
-        ;stop
-        ;print,i
+
       ENDIF
 
       FREE_LUN,lun
